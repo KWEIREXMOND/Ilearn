@@ -48,6 +48,29 @@ test('calls Gemini server-side and returns validated questions', async () => {
   });
 });
 
+test('reports actionable Gemini upstream errors without exposing upstream details', async () => {
+  let status = 400;
+  let details = [{ reason: 'API_KEY_INVALID' }];
+  const fakeFetch = async () => ({ ok: false, status, json: async () => ({ error: { message: 'private-test-key secret upstream data', details } }) });
+  await withServer({ apiKey: 'private-test-key', fetchImpl: fakeFetch }, async base => {
+    for (const [code, detail, expected] of [
+      [400, [{ reason: 'API_KEY_INVALID' }], /rejected the Gemini API key/],
+      [400, [], /rejected the Gemini request/],
+      [429, [], /quota or rate limit/],
+      [403, [], /denied Gemini access/],
+      [404, [], /model was not found/],
+      [503, [], /try again later/],
+    ]) {
+      status = code; details = detail;
+      const response = await post(base);
+      assert.equal(response.status, 502);
+      const body = await response.json();
+      assert.match(body.error, expected);
+      assert.doesNotMatch(JSON.stringify(body), /private-test-key|secret upstream data/);
+    }
+  });
+});
+
 test('rejects invalid inputs, cross-origin requests, and malformed model output', async () => {
   const fakeFetch = async () => ({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify({ questions: [{ ...question, answer: 9 }] }) }] } }] }) });
   await withServer({ apiKey: 'test', fetchImpl: fakeFetch }, async base => {

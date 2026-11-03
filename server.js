@@ -134,7 +134,22 @@ function createServer({ apiKey = process.env.GEMINI_API_KEY, model = process.env
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(45000),
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: schema } })
       });
-      if (!upstream.ok) return respond(res, 502, { error: 'Gemini could not generate questions right now. Please try again or add questions manually.' });
+      if (!upstream.ok) {
+        // Only expose fixed messages, never Google's response body, which may contain
+        // sensitive request details. A status alone is not always a precise diagnosis.
+        let reasons = [];
+        try {
+          const errorBody = await upstream.json();
+          reasons = Array.isArray(errorBody?.error?.details) ? errorBody.error.details.map(detail => detail?.reason) : [];
+        } catch { /* An upstream error body is not guaranteed to be JSON. */ }
+        let error = 'Gemini could not generate content right now. Please try again later.';
+        if (reasons.includes('API_KEY_INVALID')) error = 'Google rejected the Gemini API key. Check GEMINI_API_KEY in Vercel and redeploy; do not share the key.';
+        else if (upstream.status === 429) error = 'Gemini quota or rate limit was reached. Check your Google AI Studio quota and billing, then try again later.';
+        else if (upstream.status === 403 || upstream.status === 401) error = 'Google denied Gemini access. Check the API key, its restrictions, and whether the Gemini API is enabled for its project.';
+        else if (upstream.status === 404) error = 'The configured Gemini model was not found or is unavailable to this API key. Check the model configuration.';
+        else if (upstream.status === 400) error = 'Google rejected the Gemini request. Check the API key and model configuration or try different generation settings.';
+        return respond(res, 502, { error });
+      }
       const payload = await upstream.json();
       const text = payload.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('');
       const parsed = JSON.parse(text);
