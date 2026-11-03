@@ -1,0 +1,24 @@
+{
+  "name": "ilearn",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A local-first personal learning dashboard",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "build": "node scripts/build.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.17.4",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "pdfjs-dist": "4.8.69",
+    "tesseract.js": "^6.0.1"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.4",
+    "jsdom": "^26.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
