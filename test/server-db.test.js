@@ -10,9 +10,14 @@ test('database-backed accounts and sessions work across independent server insta
     const first=await auth(a,'register',{email:'db@example.com',password:'test-secure-password'});assert.equal(first.status,201);const cookie=first.headers.get('set-cookie').split(';')[0];
     const me=await fetch(b+'/api/auth/session',{headers:{Cookie:cookie}});assert.equal(me.status,200);assert.equal((await me.json()).user.email,'db@example.com');
     const login=await auth(b,'login',{email:'DB@example.com',password:'test-secure-password'});assert.equal(login.status,200);
+    const user=(await login.json()).user;const loginCookie=login.headers.get('set-cookie').split(';')[0];
     assert.equal((await auth(b,'register',{email:'db@example.com',password:'test-secure-password'})).status,409);
-    const logout=await fetch(b+'/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json',Origin:b,Cookie:cookie},body:'{}'});assert.equal(logout.status,200);
-    assert.equal((await fetch(a+'/api/auth/session',{headers:{Cookie:cookie}})).status,401);
+    const logout=await fetch(b+'/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json',Origin:b,Cookie:loginCookie},body:'{}'});assert.equal(logout.status,200);
+    assert.equal((await fetch(a+'/api/auth/session',{headers:{Cookie:loginCookie}})).status,401);
+    const relogin=await auth(a,'login',{email:'db@example.com',password:'test-secure-password'});assert.equal(relogin.status,200);
+    assert.equal((await relogin.json()).user.id,user.id);
+    const meAgain=await fetch(b+'/api/auth/session',{headers:{Cookie:relogin.headers.get('set-cookie').split(';')[0]}});assert.equal(meAgain.status,200);
+    assert.equal((await meAgain.json()).user.id,user.id);
   }finally{await new Promise(r=>s1.close(r));await new Promise(r=>s2.close(r));db1.close();db2.close();await fs.rm(dir,{recursive:true,force:true})}
 });
 

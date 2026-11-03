@@ -56,15 +56,21 @@ async function startAuth() {
   } catch { authScreen('Account service is unavailable. Please check your connection.'); }
 }
 function clearClientSession() {
-  closeModal(); pdfRenderToken++; readerOpen=false; currentUser=null; data=initial(); KEY=LEGACY_KEY; PDF_DB='ilearn-pdfs-v1'; quiz=null; authMode='login';
+  closeModal(); pdfRenderToken++; readerOpen=false; menuOpen=false; currentUser=null; data=initial(); KEY=LEGACY_KEY; PDF_DB='ilearn-pdfs-v1'; quiz=null; authMode='login';
 }
 function sessionExpired() { clearClientSession(); authScreen('Your session expired. Please sign in again.'); }
 async function signOut() {
+  const buttons = [...document.querySelectorAll('[data-action="sign-out"]')];
+  if (buttons.some(button => button.disabled)) return;
+  buttons.forEach(button => { button.disabled = true; });
   try {
-    const response = await fetch('/api/auth/logout', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
-    if (!response.ok) throw Error('Could not sign out. Please try again.');
+    const response = await fetch('/api/auth/logout', { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}' });
+    if (!response.ok) throw Error('Could not log out. Please try again.');
     clearClientSession(); authScreen();
-  } catch (err) { toast(err.message || 'Could not sign out. Please try again.'); }
+  } catch (err) {
+    buttons.forEach(button => { button.disabled = false; });
+    toast(err.message || 'Could not log out. Please try again.');
+  }
 }
 async function importLegacyData() {
   const legacy = localStorage.getItem(LEGACY_KEY);
