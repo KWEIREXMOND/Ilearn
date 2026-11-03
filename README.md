@@ -30,7 +30,7 @@ export GEMINI_API_KEY="your-key-here"
 npm start
 ```
 
-On Windows PowerShell, use `$env:GEMINI_API_KEY = "your-key-here"` before running `npm start`. The optional `GEMINI_MODEL` environment variable overrides the default `gemini-2.5-flash`. Use a model that supports structured JSON output and is enabled for your key. Restart the server after changing environment variables. Avoid sharing your key in chat or committing it to Git. Manual questions and PDF reading work without Gemini.
+On Windows PowerShell, use `$env:GEMINI_API_KEY = "your-key-here"` before running `npm start`. The optional `GEMINI_MODEL` environment variable overrides the default `gemini-3.5-flash-lite`. Use a model that supports structured JSON output and is enabled for your key. Restart the server after changing environment variables. Avoid sharing your key in chat or committing it to Git. Manual questions and PDF reading work without Gemini.
 
 The server validates request fields and generated output, uses a basic in-memory per-IP rate limit, and does not expose the API key to the frontend. It cannot guarantee academic correctness or detect every ambiguous answer. The generation endpoints require a signed-in session, but this single-process authentication and browser-local storage are not production-grade; **do not expose this prototype or a configured key-backed server publicly**. Production deployment needs authentication, authorization, durable shared rate limits, secure transport, monitoring and other protections. For local use, rate limits are per server instance and reset on restart; the hosted database shares account and generation rate limits across instances.
 

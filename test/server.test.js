@@ -42,6 +42,7 @@ test('calls Gemini server-side and returns validated questions', async () => {
     assert.equal(response.status, 200);
     assert.deepEqual((await response.json()).questions, [question]);
     assert.equal(call.options.headers['x-goog-api-key'], 'private-test-key');
+    assert.match(call.url, /\/models\/gemini-3\.5-flash-lite:generateContent$/);
     const prompt = JSON.parse(call.options.body).contents[0].parts[0].text;
     assert.match(prompt, /Federal government/); assert.match(prompt, /Federal systems divide power/);
     assert.match(prompt, /not claim the questions are authentic/);

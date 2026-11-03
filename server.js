@@ -76,7 +76,7 @@ function validateLesson(steps, input) {
   });
 }
 const questionSchema = { type: 'OBJECT', properties: { text: { type: 'STRING' }, options: { type: 'ARRAY', items: { type: 'STRING' } }, answer: { type: 'INTEGER' }, explanation: { type: 'STRING' } }, required: ['text', 'options', 'answer', 'explanation'] };
-function createServer({ apiKey = process.env.GEMINI_API_KEY, model = process.env.GEMINI_MODEL || 'gemini-2.5-flash', fetchImpl = globalThis.fetch, accountFile, databaseClient, trustProxy = process.env.TRUST_PROXY === '1' || !!process.env.VERCEL } = {}) {
+function createServer({ apiKey = process.env.GEMINI_API_KEY, model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite', fetchImpl = globalThis.fetch, accountFile, databaseClient, trustProxy = process.env.TRUST_PROXY === '1' || !!process.env.VERCEL } = {}) {
   const databaseUrl = process.env.TURSO_DATABASE_URL;
   const auth = databaseClient || databaseUrl ? createDbAuth({ client:databaseClient, url:databaseUrl, authToken:process.env.TURSO_AUTH_TOKEN, trustProxy }) : process.env.VERCEL ? { handle:async(req,res,p)=>{if(!p.startsWith('/api/auth/'))return false;respond(res,503,{error:'Account database is not configured.'});return true}, getUser:async()=>{throw Error('Account database not configured')} } : createAuth({ accountFile, trustProxy });
   const rates = new Map();
