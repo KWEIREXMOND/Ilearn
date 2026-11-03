@@ -126,9 +126,13 @@ function createServer({ apiKey = process.env.GEMINI_API_KEY, model = process.env
     const prompt = isLesson
       ? `Create a step-by-step lesson of exactly ${input.count} sequential steps for subject ${JSON.stringify(input.subject)}, topic ${JSON.stringify(input.topic)}. These are mandatory constraints. ${sourceInstruction} Each step needs a concise title, an instructional explanation with examples, and one multiple-choice check for understanding with exactly four distinct options, one unambiguous answer (zero-based option index), and an explanation. Do not repeat questions. Do not claim the content is official or verified. Return only JSON matching the requested schema.`
       : `Create exactly ${input.count} ${input.difficulty.toLowerCase()} ${input.format === 'true-false' ? 'true-or-false' : 'multiple-choice'} practice questions. Subject: ${JSON.stringify(input.subject)}. Topic: ${JSON.stringify(input.topic)}. Exam style: ${input.examStyle}. The subject and topic are mandatory constraints. ${input.examStyle === 'WASSCE' ? 'Use WASSCE-style wording, but do not claim the questions are authentic past examination questions.' : ''}\n${sourceInstruction}\nEach question must have one unambiguously correct answer, distinct options, and a clear explanation. Do not repeat questions. For multiple choice, supply exactly four options. For true/false, options must be exactly ["True", "False"] in that order. Answer is a zero-based integer index into options. Return only JSON matching the requested schema.`;
+    const optionCount = isLesson || input.format === 'multiple-choice' ? 4 : 2;
+    const constrainedQuestion = { ...questionSchema, properties: { ...questionSchema.properties, options: { ...questionSchema.properties.options, minItems: String(optionCount), maxItems: String(optionCount) }, answer: { type: 'INTEGER', minimum: 0, maximum: optionCount - 1 } } };
+    // Permit an empty array for unsupported source material as instructed in the prompt.
+    const countLimits = { minItems: input.source.trim() ? '0' : String(input.count), maxItems: String(input.count) };
     const schema = isLesson
-      ? { type: 'OBJECT', properties: { steps: { type: 'ARRAY', items: { type: 'OBJECT', properties: { title: { type: 'STRING' }, content: { type: 'STRING' }, question: questionSchema }, required: ['title', 'content', 'question'] } } }, required: ['steps'] }
-      : { type: 'OBJECT', properties: { questions: { type: 'ARRAY', items: questionSchema } }, required: ['questions'] };
+      ? { type: 'OBJECT', properties: { steps: { type: 'ARRAY', ...countLimits, items: { type: 'OBJECT', properties: { title: { type: 'STRING' }, content: { type: 'STRING' }, question: constrainedQuestion }, required: ['title', 'content', 'question'] } } }, required: ['steps'] }
+      : { type: 'OBJECT', properties: { questions: { type: 'ARRAY', ...countLimits, items: constrainedQuestion } }, required: ['questions'] };
     try {
       const upstream = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(45000),
@@ -150,13 +154,42 @@ function createServer({ apiKey = process.env.GEMINI_API_KEY, model = process.env
         else if (upstream.status === 400) error = 'Google rejected the Gemini request. Check the API key and model configuration or try different generation settings.';
         return respond(res, 502, { error });
       }
-      const payload = await upstream.json();
-      const text = payload.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('');
-      const parsed = JSON.parse(text);
-      if (isLesson) return respond(res, 200, { steps: validateLesson(parsed.steps, input) });
-      return respond(res, 200, { questions: validateQuestions(parsed.questions, input) });
-    } catch {
-      return respond(res, 502, { error: 'Gemini returned an incomplete or invalid set, or the service is unavailable. Please try again or add questions manually.' });
+      let payload;
+      try { payload = await upstream.json(); }
+      catch { return respond(res, 502, { error: 'Gemini returned an unreadable response. Please try again.' }); }
+      const candidate = payload.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+      if (payload.promptFeedback?.blockReason || (finishReason && !['STOP', 'MAX_TOKENS'].includes(finishReason))) {
+        return respond(res, 502, { error: 'Gemini did not complete the response, possibly due to a content restriction. Try different study material or settings.' });
+      }
+      if (finishReason === 'MAX_TOKENS') return respond(res, 502, { error: 'Gemini ran out of space while generating. Try fewer questions or lesson steps.' });
+      const text = candidate?.content?.parts?.filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('');
+      if (!text) return respond(res, 502, { error: 'Gemini returned no content. Please try again.' });
+      let parsed;
+      try { parsed = JSON.parse(text); }
+      catch { return respond(res, 502, { error: 'Gemini returned an invalid response format. Please try again.' }); }
+      const items = isLesson ? parsed?.steps : parsed?.questions;
+      if (input.source.trim() && Array.isArray(items) && !items.length) return respond(res, 502, { error: 'Gemini could not generate content from the supplied material. Check that it covers the topic and try again.' });
+      try {
+        if (isLesson) return respond(res, 200, { steps: validateLesson(items, input) });
+        return respond(res, 200, { questions: validateQuestions(items, input) });
+      } catch (error) {
+        const messages = {
+          'Incomplete generated set': 'Gemini returned the wrong number of questions. Try again or request fewer questions.',
+          'Incomplete lesson': 'Gemini returned the wrong number of lesson steps. Try again or request fewer steps.',
+          'Duplicate generated question': 'Gemini repeated a question. Please try again.',
+          'Duplicate answer options': 'Gemini returned duplicate answer options. Please try again.',
+          'Invalid true/false options': 'Gemini returned invalid true-or-false options. Please try again.',
+          'Malformed generated question': 'Gemini returned a question in an invalid format. Please try again.',
+          'Malformed lesson step': 'Gemini returned a lesson step in an invalid format. Please try again.',
+        };
+        return respond(res, 502, { error: messages[error.message] || 'Gemini returned invalid content. Please try again.' });
+      }
+    } catch (error) {
+      const message = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+        ? 'Gemini took too long to respond. Try fewer questions or lesson steps.'
+        : 'Could not connect to Gemini. Please try again later.';
+      return respond(res, 502, { error: message });
     }
   });
 }

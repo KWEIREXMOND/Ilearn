@@ -46,6 +46,9 @@ test('calls Gemini server-side and returns validated questions', async () => {
     const prompt = JSON.parse(call.options.body).contents[0].parts[0].text;
     assert.match(prompt, /Federal government/); assert.match(prompt, /Federal systems divide power/);
     assert.match(prompt, /not claim the questions are authentic/);
+    const schema = JSON.parse(call.options.body).generationConfig.responseSchema;
+    assert.equal(schema.properties.questions.maxItems, '1');
+    assert.equal(schema.properties.questions.items.properties.options.minItems, '4');
   });
 });
 
@@ -68,6 +71,36 @@ test('reports actionable Gemini upstream errors without exposing upstream detail
       const body = await response.json();
       assert.match(body.error, expected);
       assert.doesNotMatch(JSON.stringify(body), /private-test-key|secret upstream data/);
+    }
+  });
+});
+
+test('handles Gemini thoughts and provides safe diagnostics for incomplete responses', async () => {
+  let result;
+  const fakeFetch = async () => {
+    if (result instanceof Error) throw result;
+    return { ok: true, json: async () => result };
+  };
+  await withServer({ apiKey: 'test', fetchImpl: fakeFetch }, async base => {
+    const candidate = parts => ({ candidates: [{ finishReason: 'STOP', content: { parts } }] });
+    result = candidate([{ thought: true, text: 'private reasoning' }, { text: JSON.stringify({ questions: [question] }) }]);
+    assert.equal((await post(base)).status, 200);
+    for (const [payload, expected, body] of [
+      [{ candidates: [{ finishReason: 'MAX_TOKENS' }] }, /ran out of space/, input],
+      [{ promptFeedback: { blockReason: 'SAFETY' } }, /content restriction/, input],
+      [candidate([]), /no content/, input],
+      [candidate([{ text: 'private invalid text' }]), /invalid response format/, input],
+      [candidate([{ text: '{"questions":[]}' }]), /wrong number/, input],
+      [candidate([{ text: '{"questions":[]}' }]), /supplied material/, { ...input, source: 'source text' }],
+      [Object.assign(new Error('secret upstream data'), { name: 'TimeoutError' }), /too long/, input],
+      [new Error('secret upstream data'), /connect to Gemini/, input],
+    ]) {
+      result = payload;
+      const response = await post(base, body);
+      assert.equal(response.status, 502);
+      const data = await response.json();
+      assert.match(data.error, expected);
+      assert.doesNotMatch(JSON.stringify(data), /private invalid text|secret upstream data/);
     }
   });
 });
