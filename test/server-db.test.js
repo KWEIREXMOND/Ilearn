@@ -21,3 +21,9 @@ test('accepts JSON already parsed by a serverless runtime and enforces its size 
   assert.deepEqual(await readJson({body:{email:'learner@example.com'}},100),{email:'learner@example.com'});
   await assert.rejects(readJson({body:{source:'x'.repeat(500)}},100),err=>err.status===413);
 });
+
+test('Vercel auth session function reaches the shared route handler', async()=>{
+  const http=require('node:http');const handler=require('../api/auth/session');const server=http.createServer(handler),base=await listen(server);
+  try {const res=await fetch(base+'/api/auth/session');assert.equal(res.status,401);assert.match((await res.json()).error,/sign in/i)}
+  finally {await new Promise(resolve=>server.close(resolve))}
+});
